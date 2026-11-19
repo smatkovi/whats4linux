@@ -574,6 +574,12 @@ func (a *Api) mainEventHandler(evt any) {
 		muted := v.Action.GetMuted()
 		a.handleMuteEvent(v.JID, muted, v.Action.GetMuteEndTimestamp())
 
+	case *events.PairSuccess:
+		// Pairing by phone number can finish after the QR channel from Login()
+		// has already timed out; tell the UI directly so it leaves the login
+		// screen either way.
+		runtime.EventsEmit(a.ctx, "wa:status", "success")
+
 	case *events.Connected:
 		// For new logins, there might be a problem where the whatsmeow client
 		// gets a 515 code which gets resolved internally by auto-reconnecting

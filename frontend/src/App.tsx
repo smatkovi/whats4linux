@@ -86,6 +86,9 @@ function App() {
 
   useEffect(() => {
     const unsubQR = EventsOn("wa:qr", async (qr: string) => {
+      // A fresh code means the login socket is alive again (e.g. after
+      // "Reload QR code"), so drop a stale "timeout" status.
+      setStatus(s => (s === "timeout" ? "" : s))
       if (!canvasRef.current) return
       await QRCode.toCanvas(canvasRef.current, qr, {
         width: 300,
