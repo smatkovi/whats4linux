@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -397,6 +399,9 @@ func (a *Api) SaveMediaAs(chatJID, messageID string) (string, error) {
 func (a *Api) OpenMedia(chatJID, messageID string) (string, error) {
 	path := a.savedAttachment(messageID)
 	if path == "" {
+		path = a.existingDownload(chatJID, messageID)
+	}
+	if path == "" {
 		var err error
 		if path, err = a.SaveMediaToFile(chatJID, messageID); err != nil {
 			return "", err
@@ -430,6 +435,33 @@ func openWithDesktop(path string) error {
 	}
 	go func() { _ = cmd.Wait() }()
 	return nil
+}
+
+// existingDownload returns the file in the download folder that already holds
+// this attachment (same name and same SHA-256 as the message says), so
+// opening a document again after a restart doesn't save another copy.
+func (a *Api) existingDownload(chatJID, messageID string) string {
+	msg, err := a.lookupMediaMessage(chatJID, messageID)
+	if err != nil {
+		return ""
+	}
+	want := msg.Media.GetFileSHA256()
+	if len(want) != sha256.Size {
+		return ""
+	}
+	name := attachmentFileName(msg.Media.GetFileName(), mediaMimeOf(msg), msg.Media.GetMediaGeneralType(), msg.Info.Timestamp)
+	path := filepath.Join(downloadDir(), name)
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil || !bytes.Equal(h.Sum(nil), want) {
+		return ""
+	}
+	a.rememberSavedAttachment(messageID, path)
+	return path
 }
 
 func (a *Api) rememberSavedAttachment(messageID, path string) {

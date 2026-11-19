@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"image"
 	"image/color"
 	"image/png"
@@ -288,5 +289,48 @@ func TestSaveMediaToFileWritesCachedImage(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dl); len(entries) != 2 {
 		t.Fatalf("expected exactly 2 files (no leftover .part), got %d", len(entries))
+	}
+}
+
+func TestExistingDownloadIsReusedOnlyWhenHashMatches(t *testing.T) {
+	a := newMediaTestAPI(t)
+	dl := t.TempDir()
+	t.Setenv("XDG_DOWNLOAD_DIR", dl)
+
+	content := []byte("%PDF-1.4 test document")
+	sum := sha256.Sum256(content)
+	chat, _ := types.ParseJID("123@s.whatsapp.net")
+	info := types.MessageInfo{
+		ID:            "doc-1",
+		Timestamp:     time.Now(),
+		MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+	}
+	msg := &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
+		Mimetype:      proto.String("application/pdf"),
+		FileName:      proto.String("Plan.pdf"),
+		DirectPath:    proto.String("/v/t62.7119-24/fake"),
+		MediaKey:      []byte("0123456789abcdef0123456789abcdef"),
+		FileSHA256:    sum[:],
+		FileEncSHA256: []byte("encsha"),
+	}}
+	if err := a.messageStore.InsertMessage(&info, msg, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := a.existingDownload(chat.String(), "doc-1"); got != "" {
+		t.Fatalf("no file yet, got %q", got)
+	}
+	target := filepath.Join(dl, "Plan.pdf")
+	if err := os.WriteFile(target, []byte("a different file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.existingDownload(chat.String(), "doc-1"); got != "" {
+		t.Fatalf("different content must not be reused, got %q", got)
+	}
+	if err := os.WriteFile(target, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.existingDownload(chat.String(), "doc-1"); got != target {
+		t.Fatalf("matching file not reused, got %q", got)
 	}
 }

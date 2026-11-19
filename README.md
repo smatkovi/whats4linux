@@ -134,7 +134,7 @@ Whats4Linux is built specifically for Linux:
 > ⚠️ Project is under active development
 
 ```bash
-git clone https://github.com/lugvitc/whats4linux
+git clone https://github.com/smatkovi/whats4linux
 cd whats4linux
 wails build
 ```
