@@ -12,6 +12,7 @@ import { GetCachedAvatar } from "../../../wailsjs/go/api/Api"
 import { useContactStore } from "../../store/useContactStore"
 import { PollDialog } from "./PollDialog"
 import { ContactShareDialog } from "./ContactShareDialog"
+import { classifyAttachment } from "../../lib/attachments"
 
 const EmojiPicker = lazy(() => import("./EmojiPickerLazy"))
 interface ChatInputProps {
@@ -70,6 +71,13 @@ const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
 )
 IconButton.displayName = "IconButton"
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
 interface FilePreviewProps {
   file: File
   fileType: string
@@ -84,16 +92,29 @@ const FilePreview = ({ file, fileType, onRemove, onFileTypeChange }: FilePreview
         {FILE_TYPE_ICONS[fileType as keyof typeof FILE_TYPE_ICONS]}
         <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{file.name}</span>
       </div>
-      <span className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</span>
-      {file.type === "image/webp" && onFileTypeChange && (
-        <button
-          type="button"
-          onClick={() => onFileTypeChange(fileType === "sticker" ? "image" : "sticker")}
-          className="mt-1 text-xs text-green-600 dark:text-green-400 hover:underline"
-        >
-          {fileType === "sticker" ? "Send as image" : "Send as sticker"}
-        </button>
-      )}
+      <span className="text-xs text-gray-500">{formatFileSize(file.size)}</span>
+      <div className="flex gap-3">
+        {file.type === "image/webp" && fileType !== "document" && onFileTypeChange && (
+          <button
+            type="button"
+            onClick={() => onFileTypeChange(fileType === "sticker" ? "image" : "sticker")}
+            className="mt-1 text-xs text-green-600 dark:text-green-400 hover:underline"
+          >
+            {fileType === "sticker" ? "Send as image" : "Send as sticker"}
+          </button>
+        )}
+        {onFileTypeChange && classifyAttachment(file) !== "document" && (
+          <button
+            type="button"
+            onClick={() =>
+              onFileTypeChange(fileType === "document" ? classifyAttachment(file) : "document")
+            }
+            className="mt-1 text-xs text-green-600 dark:text-green-400 hover:underline"
+          >
+            {fileType === "document" ? `Send as ${classifyAttachment(file)}` : "Send as document"}
+          </button>
+        )}
+      </div>
     </div>
     <button onClick={onRemove} className="text-red-500 hover:text-red-600 p-1" title="Remove file">
       ×
@@ -521,6 +542,13 @@ export function ChatInput({
                         label: "📄 Document",
                         act: () => {
                           setFileAccept("*/*")
+                          setTimeout(() => fileInputRef.current?.click(), 0)
+                        },
+                      },
+                      {
+                        label: "🎵 Audio",
+                        act: () => {
+                          setFileAccept("audio/*")
                           setTimeout(() => fileInputRef.current?.click(), 0)
                         },
                       },

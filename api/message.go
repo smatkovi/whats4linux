@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -268,14 +269,18 @@ func (a *Api) SendMessage(chatJID string, content MessageContent) (string, error
 		}
 
 		// Create image message
-		mimeType := content.Mimetype
-		if mimeType == "" {
-			mimeType = "image/jpeg"
-		}
+		mimeType := resolveUploadMime(content.Mimetype, content.FileName, imageData, "image/jpeg")
 		imageMsg := &waE2E.ImageMessage{
-			Mimetype:      &mimeType,
-			Caption:       &content.Text,
-			JPEGThumbnail: nil, // We'll let WhatsApp generate the thumbnail
+			Mimetype: &mimeType,
+			Caption:  &content.Text,
+		}
+		// Recipients show the embedded preview while the full image loads.
+		if thumb := generateThumbnail(imageData, mimeType); len(thumb) > 0 {
+			imageMsg.JPEGThumbnail = thumb
+		}
+		if w, h := imageDimensions(imageData); w > 0 {
+			imageMsg.Width = &w
+			imageMsg.Height = &h
 		}
 
 		if len(content.Mentions) > 0 || contextInfo != nil {
@@ -312,14 +317,25 @@ func (a *Api) SendMessage(chatJID string, content MessageContent) (string, error
 		}
 
 		// Create video message
-		mimeType := content.Mimetype
-		if mimeType == "" {
-			mimeType = "video/mp4"
-		}
+		mimeType := resolveUploadMime(content.Mimetype, content.FileName, videoData, "video/mp4")
 		videoMsg := &waE2E.VideoMessage{
-			Mimetype:      &mimeType,
-			Caption:       &content.Text,
-			JPEGThumbnail: nil, // We'll let WhatsApp generate the thumbnail
+			Mimetype: &mimeType,
+			Caption:  &content.Text,
+		}
+		// Preview frame, size and duration (needs ffmpeg; optional).
+		probe := probeMediaFile(a.ctx, videoData, true)
+		logProbe("video", probe)
+		if len(probe.Thumbnail) > 0 {
+			if thumb := generateThumbnail(probe.Thumbnail, "image/jpeg"); len(thumb) > 0 {
+				videoMsg.JPEGThumbnail = thumb
+			}
+		}
+		if probe.Width > 0 {
+			videoMsg.Width = &probe.Width
+			videoMsg.Height = &probe.Height
+		}
+		if probe.Seconds > 0 {
+			videoMsg.Seconds = &probe.Seconds
 		}
 
 		if len(content.Mentions) > 0 || contextInfo != nil {
@@ -356,12 +372,12 @@ func (a *Api) SendMessage(chatJID string, content MessageContent) (string, error
 		}
 
 		// Create audio message
-		mimeType := content.Mimetype
-		if mimeType == "" {
-			mimeType = "audio/ogg"
-		}
+		mimeType := resolveUploadMime(content.Mimetype, content.FileName, audioData, "audio/ogg")
 		audioMsg := &waE2E.AudioMessage{
 			Mimetype: &mimeType,
+		}
+		if probe := probeMediaFile(a.ctx, audioData, false); probe.Seconds > 0 {
+			audioMsg.Seconds = &probe.Seconds
 		}
 
 		if contextInfo != nil {
@@ -392,17 +408,16 @@ func (a *Api) SendMessage(chatJID string, content MessageContent) (string, error
 		}
 
 		// Create document message
-		mimeType := content.Mimetype
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
-		fileName := strings.TrimSpace(content.FileName)
+		mimeType := resolveUploadMime(content.Mimetype, content.FileName, documentData, "application/octet-stream")
+		fileName := sanitizeFileName(content.FileName)
 		if fileName == "" {
-			fileName = "document"
+			fileName = "document" + extensionForMime(mimeType)
 		}
+		title := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 		documentMsg := &waE2E.DocumentMessage{
 			Mimetype: &mimeType,
 			FileName: &fileName,
+			Title:    &title,
 			Caption:  &content.Text,
 		}
 

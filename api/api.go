@@ -55,6 +55,9 @@ type Api struct {
 	windowFocused       atomic.Bool
 	groupRepairInFlight atomic.Bool
 	appStateResync      atomic.Bool
+	// savedAttachments maps message IDs to the file an attachment was saved
+	// to this session, so "open" doesn't download it twice.
+	savedAttachments sync.Map
 }
 
 // repairGroupNames heals whats4linux_groups rows that are missing or were

@@ -3,6 +3,26 @@
 ![Downloads](https://img.shields.io/github/downloads/lugvitc/whats4linux/total?style=flat-square) ![Contributors](https://img.shields.io/github/contributors/lugvitc/whats4linux?color=dark-green&style=flat-square) ![Issues](https://img.shields.io/github/issues/lugvitc/whats4linux?style=flat-square) ![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg) [![CI](https://github.com/lugvitc/whats4linux/actions/workflows/format.yaml/badge.svg)](https://github.com/lugvitc/whats4linux/actions/workflows/format.yaml) [![Release](https://github.com/lugvitc/whats4linux/actions/workflows/build.yaml/badge.svg)](https://github.com/lugvitc/whats4linux/actions/workflows/build.yaml)
 
 
+> ## This fork
+>
+> This is a fork of [lugvitc/whats4linux](https://github.com/lugvitc/whats4linux) with two additions:
+>
+> - **Link with phone number.** Besides the QR code, the login screen can request an 8-character
+>   pairing code for your number. Enter it on the phone under *Linked devices → Link a device →
+>   Link with phone number instead*. Handy when the phone can't scan the screen.
+> - **Attachments in both directions.**
+>   - *Download:* every attachment (photo, video, voice/audio, document, sticker) can be saved from
+>     the message menu (*Download* / *Save as…*). Files go to your XDG download folder, are streamed
+>     to disk instead of passing through the UI, and never overwrite an existing file. Clicking a
+>     document opens it with the default application.
+>   - *Upload:* attach via the 📎 menu (*Photos & videos*, *Document*, *Audio*) or drag a file onto the
+>     chat. Photos get a preview thumbnail and dimensions; with `ffmpeg` installed, videos also get a
+>     preview frame, size and duration. Formats WhatsApp can't show inline are sent as documents,
+>     and any photo or video can be sent as an uncompressed document instead. Failed sends show an
+>     error and give the message back for a retry.
+>
+> Prebuilt Linux x86_64 binaries are on the [Releases](https://github.com/smatkovi/whats4linux/releases) page.
+
 **Whats4Linux** is an unofficial WhatsApp client for Linux with a **native Go backend** and a **lightweight WebKit-based UI**.
 
 It is **not a wrapper around WhatsApp Web**.  
@@ -118,6 +138,9 @@ git clone https://github.com/lugvitc/whats4linux
 cd whats4linux
 wails build
 ```
+
+The optional tray helper is built separately with
+`cd systray && go build -o ../build/bin/whats4linux_tray .`.
 
 This will produce a binary in the `build/bin/` directory.
 

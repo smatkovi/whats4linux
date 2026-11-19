@@ -10,7 +10,21 @@ interface MessageMenuProps {
   onCopy?: () => void
   onReact?: () => void
   onPin?: () => void
+  onDownload?: () => void
+  onSaveAs?: () => void
 }
+
+const DownloadMenuIcon = () => (
+  <svg viewBox="0 0 24 24" width="18" height="18" className="fill-current">
+    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+  </svg>
+)
+
+const SaveAsMenuIcon = () => (
+  <svg viewBox="0 0 24 24" width="18" height="18" className="fill-current">
+    <path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-8 11-4-4h3V9h2v4h3l-4 4z" />
+  </svg>
+)
 
 // Same pin glyph as the chat list, sized for menu rows.
 const PinMenuIcon = () => (
@@ -27,6 +41,8 @@ export function MessageMenu({
   onCopy,
   onReact,
   onPin,
+  onDownload,
+  onSaveAs,
 }: MessageMenuProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
@@ -159,6 +175,26 @@ export function MessageMenu({
               <ReactIcon />
               <span>React</span>
             </button>
+
+            {onDownload && (
+              <button
+                onClick={() => handleMenuItemClick(onDownload)}
+                className="rounded-xl w-full px-4 py-2.5 text-left flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-dark-tertiary transition-colors text-gray-800 dark:text-gray-200 text-sm"
+              >
+                <DownloadMenuIcon />
+                <span>Download</span>
+              </button>
+            )}
+
+            {onSaveAs && (
+              <button
+                onClick={() => handleMenuItemClick(onSaveAs)}
+                className="rounded-xl w-full px-4 py-2.5 text-left flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-dark-tertiary transition-colors text-gray-800 dark:text-gray-200 text-sm"
+              >
+                <SaveAsMenuIcon />
+                <span>Save as…</span>
+              </button>
+            )}
 
             {onPin && (
               <button

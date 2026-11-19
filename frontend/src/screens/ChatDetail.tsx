@@ -23,6 +23,7 @@ import { formatPhone } from "../lib/utils"
 import gsap from "gsap"
 import { useGSAP } from "@gsap/react"
 import { getEase } from "../store/useEaseStore"
+import { classifyAttachment, toast } from "../lib/attachments"
 
 interface ChatDetailProps {
   chatId: string
@@ -54,6 +55,7 @@ export function ChatDetail({ chatId, chatName, chatAvatar, onBack }: ChatDetailP
     setActiveChatId,
     addPendingMessage,
     updatePendingMessageToSent,
+    removePendingMessage,
   } = useMessageStore()
   const {
     setTypingIndicator,
@@ -602,7 +604,17 @@ export function ChatDetail({ chatId, chatName, chatAvatar, onBack }: ChatDetailP
       }
     } catch (err) {
       console.error("Failed to send:", err)
-      // Optionally, mark message as failed or remove it
+      // Drop the optimistic bubble and give the user their message back so
+      // they can retry, unless they already started typing something new.
+      removePendingMessage(chatId, tempId)
+      toast(`Sending failed: ${String(err).replace(/^Error:\s*/, "")}`, 7000)
+      setInputText(current => (current ? current : textToSend))
+      if (fileToSend) {
+        setSelectedFile(current => current ?? fileToSend)
+        setSelectedFileType(fileTypeToSend)
+      } else if (imageToSend) {
+        setPastedImage(current => current ?? imageToSend)
+      }
     }
   }
 
@@ -694,9 +706,51 @@ export function ChatDetail({ chatId, chatName, chatAvatar, onBack }: ChatDetailP
     }
   }, [isAtBottom])
 
+  // Files dragged from a file manager onto the chat become the attachment.
+  const [dragActive, setDragActive] = useState(false)
+  const dragDepthRef = useRef(0)
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")
+
   return (
     <div className="flex h-full min-w-0">
-      <div className="flex flex-col flex-1 min-w-0">
+      <div
+        className="relative flex flex-col flex-1 min-w-0"
+        onDragEnter={e => {
+          if (!hasFiles(e)) return
+          e.preventDefault()
+          dragDepthRef.current++
+          setDragActive(true)
+        }}
+        onDragOver={e => {
+          if (!hasFiles(e)) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = "copy"
+        }}
+        onDragLeave={e => {
+          if (!hasFiles(e)) return
+          dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+          if (dragDepthRef.current === 0) setDragActive(false)
+        }}
+        onDrop={e => {
+          if (!hasFiles(e)) return
+          e.preventDefault()
+          dragDepthRef.current = 0
+          setDragActive(false)
+          const files = Array.from(e.dataTransfer.files)
+          if (files.length === 0) return
+          if (files.length > 1) toast("Only one file can be attached at a time; using the first.")
+          setPastedImage(null)
+          setSelectedFile(files[0])
+          setSelectedFileType(classifyAttachment(files[0]))
+        }}
+      >
+        {dragActive && (
+          <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="rounded-xl border-2 border-dashed border-white px-8 py-6 text-lg font-medium text-white">
+              Drop file to attach
+            </div>
+          </div>
+        )}
         <ChatHeader
           chatName={chatName}
           chatSubtitle={chatSubtitle}
@@ -838,16 +892,16 @@ export function ChatDetail({ chatId, chatName, chatAvatar, onBack }: ChatDetailP
           }}
           onSendMessage={handleSendMessage}
           onFileSelect={e => {
-            const file = e.target.files?.[0]
+            const input = e.target
+            const file = input.files?.[0]
             if (file) {
               setSelectedFile(file)
-              const generalType = file.type.split("/")[0]
-              setSelectedFileType(
-                generalType === "image" || generalType === "video" || generalType === "audio"
-                  ? generalType
-                  : "document",
-              )
+              setPastedImage(null)
+              // The "Document" entry opens the picker with accept="*/*".
+              setSelectedFileType(classifyAttachment(file, input.accept === "*/*"))
             }
+            // Allow picking the same file again later.
+            input.value = ""
           }}
           onRemoveFile={() => {
             setSelectedFile(null)

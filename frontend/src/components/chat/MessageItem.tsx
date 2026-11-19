@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react"
 import { store } from "../../../wailsjs/go/models"
-import {
-  DownloadImageToFile,
-  GetCachedAvatar,
-  SendReaction,
-  SetMessagePinned,
-} from "../../../wailsjs/go/api/Api"
+import { GetCachedAvatar, SendReaction, SetMessagePinned } from "../../../wailsjs/go/api/Api"
 import { MediaContent } from "./MediaContent"
 import { QuotedMessage } from "./QuotedMessage"
 import { ReactionBubble, ReactionDetails } from "./Reactions"
@@ -24,6 +19,12 @@ import { useMessageStore } from "../../store"
 import { isMe } from "../../lib/self"
 import { formatPhone, phoneFromJID } from "../../lib/utils"
 import { LRUCache } from "../../lib/lruCache"
+import {
+  hasAttachment,
+  openAttachment,
+  saveAttachment,
+  saveAttachmentAs,
+} from "../../lib/attachments"
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
 const EmojiPicker = lazy(() => import("./EmojiPickerLazy"))
@@ -155,10 +156,29 @@ export function MessageItem({
     return <ReadMoreText html={caption} className="mt-1" />
   }
 
+  // Pending (optimistic) messages only have a temporary ID; nothing to fetch yet.
+  const canDownload = !isPending && hasAttachment(content)
+  const [docBusy, setDocBusy] = useState(false)
+
   const handleImageDownload = async () => {
+    await saveAttachment(chatId, message.Info.ID)
+  }
+
+  const handleDownload = canDownload
+    ? () => void saveAttachment(chatId, message.Info.ID)
+    : undefined
+  const handleSaveAs = canDownload
+    ? () => void saveAttachmentAs(chatId, message.Info.ID)
+    : undefined
+
+  const runDocAction = async (action: (chat: string, id: string) => Promise<string | null>) => {
+    if (!canDownload || docBusy) return
+    setDocBusy(true)
     try {
-      await DownloadImageToFile(message.Info.ID)
-    } catch (e) {}
+      await action(chatId, message.Info.ID)
+    } finally {
+      setDocBusy(false)
+    }
   }
 
   const handleReply = () => onReply?.(message)
@@ -370,7 +390,14 @@ export function MessageItem({
 
       return (
         <div className="flex flex-col">
-          <div className="flex items-center gap-3 bg-black/5 dark:bg-white/5 p-2 rounded-lg min-w-60">
+          <div
+            className={clsx(
+              "flex items-center gap-3 bg-black/5 dark:bg-white/5 p-2 rounded-lg min-w-60",
+              canDownload && "cursor-pointer hover:bg-black/10 dark:hover:bg-white/10",
+            )}
+            onClick={() => void runDocAction(openAttachment)}
+            title={canDownload ? "Open" : undefined}
+          >
             <div className="w-10 h-12 bg-red-500 rounded flex items-center justify-center text-white font-bold text-[10px] relative">
               <div className="absolute top-0 right-0 border-t-10 border-r-10 border-t-white/20 border-r-transparent"></div>
               {extension.slice(0, 4)}
@@ -383,19 +410,30 @@ export function MessageItem({
                 {fileSize > 0 ? formatSize(fileSize) : "Document"}
               </div>
             </div>
-            <button
-              onClick={handleImageDownload}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-full"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                className="fill-current text-gray-600 dark:text-gray-300"
+            {docBusy ? (
+              <div className="p-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500" />
+              </div>
+            ) : (
+              <button
+                onClick={e => {
+                  e.stopPropagation()
+                  void runDocAction(saveAttachment)
+                }}
+                disabled={!canDownload}
+                title="Download"
+                className="p-2 border border-gray-300 dark:border-gray-600 rounded-full disabled:opacity-40"
               >
-                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-              </svg>
-            </button>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  className="fill-current text-gray-600 dark:text-gray-300"
+                >
+                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+                </svg>
+              </button>
+            )}
           </div>
           {renderCaption(doc.caption)}
         </div>
@@ -527,6 +565,8 @@ export function MessageItem({
             onReply={handleReply}
             onCopy={handleCopy}
             onReact={handleReact}
+            onDownload={handleDownload}
+            onSaveAs={handleSaveAs}
           />
 
           {!isFromMe && chatId.endsWith("@g.us") && firstInGroup && (
