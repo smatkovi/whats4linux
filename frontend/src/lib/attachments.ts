@@ -1,4 +1,11 @@
-import { OpenMedia, SaveMediaAs, SaveMediaToFile } from "../../wailsjs/go/api/Api"
+import {
+  OpenContactCard,
+  OpenMedia,
+  SaveContactCard,
+  SaveContactCardAs,
+  SaveMediaAs,
+  SaveMediaToFile,
+} from "../../wailsjs/go/api/Api"
 import { useUIStore } from "../store/useUIStore"
 
 /** Shows a short message in the toast stack at the bottom right. */
@@ -82,4 +89,39 @@ export function classifyAttachment(file: File, forceDocument = false): string {
   if (INLINE_VIDEO.has(type)) return "video"
   if (INLINE_AUDIO.has(type)) return "audio"
   return "document"
+}
+
+/** True for message HTML that shows a shared contact card. */
+export function isContactCardHtml(html: string): boolean {
+  return html.includes('<div class="msg-card">👤')
+}
+
+/** Saves the shared contact(s) of a message as a .vcf file in Downloads. */
+export async function saveContact(chatId: string, messageId: string): Promise<string | null> {
+  try {
+    return await SaveContactCard(chatId, messageId)
+  } catch (err) {
+    toast(`Saving contact failed: ${errorText(err)}`, 6000)
+    return null
+  }
+}
+
+/** Asks for a location, then saves the contact(s) there as .vcf. */
+export async function saveContactAs(chatId: string, messageId: string): Promise<string | null> {
+  try {
+    return (await SaveContactCardAs(chatId, messageId)) || null
+  } catch (err) {
+    toast(`Saving contact failed: ${errorText(err)}`, 6000)
+    return null
+  }
+}
+
+/** Saves the contact(s) and opens the .vcf in the default address book. */
+export async function openContact(chatId: string, messageId: string): Promise<string | null> {
+  try {
+    return await OpenContactCard(chatId, messageId)
+  } catch (err) {
+    toast(`Cannot open contact: ${errorText(err)}`, 7000)
+    return null
+  }
 }

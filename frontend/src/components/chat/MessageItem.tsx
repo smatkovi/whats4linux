@@ -21,9 +21,13 @@ import { formatPhone, phoneFromJID } from "../../lib/utils"
 import { LRUCache } from "../../lib/lruCache"
 import {
   hasAttachment,
+  isContactCardHtml,
   openAttachment,
+  openContact,
   saveAttachment,
   saveAttachmentAs,
+  saveContact,
+  saveContactAs,
 } from "../../lib/attachments"
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
@@ -158,6 +162,9 @@ export function MessageItem({
 
   // Pending (optimistic) messages only have a temporary ID; nothing to fetch yet.
   const canDownload = !isPending && hasAttachment(content)
+  const isContact =
+    !isPending &&
+    isContactCardHtml(content?.conversation || content?.extendedTextMessage?.text || "")
   const [docBusy, setDocBusy] = useState(false)
 
   const handleImageDownload = async () => {
@@ -166,10 +173,14 @@ export function MessageItem({
 
   const handleDownload = canDownload
     ? () => void saveAttachment(chatId, message.Info.ID)
-    : undefined
+    : isContact
+      ? () => void saveContact(chatId, message.Info.ID)
+      : undefined
   const handleSaveAs = canDownload
     ? () => void saveAttachmentAs(chatId, message.Info.ID)
-    : undefined
+    : isContact
+      ? () => void saveContactAs(chatId, message.Info.ID)
+      : undefined
 
   const runDocAction = async (action: (chat: string, id: string) => Promise<string | null>) => {
     if (!canDownload || docBusy) return
@@ -332,6 +343,24 @@ export function MessageItem({
               </>
             )}
           </div>
+          {isContact && (
+            <div className="mt-1 flex gap-2">
+              <button
+                onClick={() => void saveContact(chatId, message.Info.ID)}
+                className="flex-1 rounded-md border border-black/10 dark:border-white/15 px-2 py-1 text-xs font-medium text-[#008069] dark:text-[#53bdeb] hover:bg-black/5 dark:hover:bg-white/5"
+                title="Save as .vcf in your download folder"
+              >
+                Save contact
+              </button>
+              <button
+                onClick={() => void openContact(chatId, message.Info.ID)}
+                className="flex-1 rounded-md border border-black/10 dark:border-white/15 px-2 py-1 text-xs font-medium text-[#008069] dark:text-[#53bdeb] hover:bg-black/5 dark:hover:bg-white/5"
+                title="Open the .vcf with your address book"
+              >
+                Add to contacts
+              </button>
+            </div>
+          )}
           {htmlContent.includes('class="msg-link"') && (
             <LinkPreview messageId={message.Info.ID} preview={message.link_preview ?? null} />
           )}

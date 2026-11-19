@@ -421,20 +421,39 @@ func (a *Api) ShowInFolder(path string) error {
 	return openWithDesktop(filepath.Dir(path))
 }
 
+// openWithDesktop hands a file to the desktop's default application. Most
+// openers return right after launching the app; if one fails within a few
+// seconds (typically: no application registered for the type) that is
+// reported, otherwise the launch counts as successful.
 func openWithDesktop(path string) error {
-	opener, err := exec.LookPath("xdg-open")
-	if err != nil {
-		if opener, err = exec.LookPath("gio"); err != nil {
-			return fmt.Errorf("no xdg-open found to open %s", path)
-		}
-		return exec.Command(opener, "open", path).Start()
+	var cmd *exec.Cmd
+	if opener, err := exec.LookPath("xdg-open"); err == nil {
+		cmd = exec.Command(opener, path)
+	} else if gio, err := exec.LookPath("gio"); err == nil {
+		cmd = exec.Command(gio, "open", path)
+	} else {
+		return fmt.Errorf("no xdg-open found to open %s", path)
 	}
-	cmd := exec.Command(opener, path)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	go func() { _ = cmd.Wait() }()
-	return nil
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if msg == "" {
+				msg = "no application is set up to open this file type"
+			}
+			return fmt.Errorf("could not open %s: %s (the file is saved there)", filepath.Base(path), msg)
+		}
+		return nil
+	case <-time.After(3 * time.Second):
+		return nil
+	}
 }
 
 // existingDownload returns the file in the download folder that already holds
@@ -628,4 +647,119 @@ func probeMediaFile(ctx context.Context, data []byte, wantThumbnail bool) mediaP
 // logProbe keeps a trace of what we could learn about outgoing media.
 func logProbe(kind string, p mediaProbe) {
 	log.Printf("[attachments] %s: %dx%d, %ds, thumbnail %d bytes", kind, p.Width, p.Height, p.Seconds, len(p.Thumbnail))
+}
+
+// ----------------------------------------------------------------------------
+// Shared contacts (vCards)
+// ----------------------------------------------------------------------------
+
+// contactFileName names the .vcf file after the contact, or after the first
+// contact plus a count when several were shared at once.
+func contactFileName(cards []store.ContactCard, ts time.Time) string {
+	first := ""
+	if len(cards) > 0 {
+		first = sanitizeFileName(cards[0].DisplayName)
+	}
+	switch {
+	case first == "" && len(cards) > 1:
+		if ts.IsZero() {
+			ts = time.Now()
+		}
+		return "WhatsApp Contacts " + ts.Local().Format("2006-01-02 at 15.04.05") + ".vcf"
+	case first == "":
+		return "Contact.vcf"
+	case len(cards) == 2:
+		return first + " and 1 more.vcf"
+	case len(cards) > 2:
+		return fmt.Sprintf("%s and %d more.vcf", first, len(cards)-1)
+	}
+	return first + ".vcf"
+}
+
+// joinVCards concatenates the vCards into one .vcf file body; every address
+// book accepts several BEGIN:VCARD blocks in one file.
+func joinVCards(cards []store.ContactCard) []byte {
+	var b strings.Builder
+	for _, c := range cards {
+		v := strings.TrimSpace(c.VCard)
+		if v == "" {
+			v = strings.TrimSpace(store.MinimalVCard(c.DisplayName, ""))
+		}
+		b.WriteString(v)
+		b.WriteString("\r\n")
+	}
+	return []byte(b.String())
+}
+
+func (a *Api) contactCards(messageID string) ([]store.ContactCard, time.Time, error) {
+	if a.messageStore == nil {
+		return nil, time.Time{}, fmt.Errorf("message store is not ready")
+	}
+	cards, ts, reconstructed, err := a.messageStore.GetContactCards(messageID)
+	if err != nil {
+		return nil, ts, err
+	}
+	if reconstructed {
+		log.Printf("[contacts] %s predates stored vCards; saving name and number only", messageID)
+	}
+	return cards, ts, nil
+}
+
+// SaveContactCard saves the contact(s) shared in a message as a .vcf file in
+// the download folder and returns its path.
+func (a *Api) SaveContactCard(chatJID, messageID string) (string, error) {
+	cards, ts, err := a.contactCards(messageID)
+	if err != nil {
+		return "", err
+	}
+	dir := downloadDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	target := uniquePath(dir, contactFileName(cards, ts))
+	if err := writeFileAtomic(target, joinVCards(cards)); err != nil {
+		return "", err
+	}
+	a.rememberSavedAttachment(messageID, target)
+	a.emitDownloadComplete(target)
+	return target, nil
+}
+
+// SaveContactCardAs asks where to save the contact(s) as a .vcf file.
+func (a *Api) SaveContactCardAs(chatJID, messageID string) (string, error) {
+	cards, ts, err := a.contactCards(messageID)
+	if err != nil {
+		return "", err
+	}
+	dir := downloadDir()
+	_ = os.MkdirAll(dir, 0o755)
+	target, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		DefaultDirectory:     dir,
+		DefaultFilename:      contactFileName(cards, ts),
+		Title:                "Save contact",
+		CanCreateDirectories: true,
+		Filters:              []runtime.FileFilter{{DisplayName: "vCard (*.vcf)", Pattern: "*.vcf"}},
+	})
+	if err != nil || target == "" {
+		return "", err
+	}
+	if err := writeFileAtomic(target, joinVCards(cards)); err != nil {
+		return "", err
+	}
+	a.rememberSavedAttachment(messageID, target)
+	a.emitDownloadComplete(target)
+	return target, nil
+}
+
+// OpenContactCard saves the contact(s) (once per session) and opens the .vcf
+// with the default application, usually the address book's import.
+func (a *Api) OpenContactCard(chatJID, messageID string) (string, error) {
+	path := a.savedAttachment(messageID)
+	if path == "" {
+		var err error
+		if path, err = a.SaveContactCard(chatJID, messageID); err != nil {
+			return "", err
+		}
+	}
+	return path, openWithDesktop(path)
 }

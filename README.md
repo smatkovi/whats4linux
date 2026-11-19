@@ -20,6 +20,9 @@
 >     preview frame, size and duration. Formats WhatsApp can't show inline are sent as documents,
 >     and any photo or video can be sent as an uncompressed document instead. Failed sends show an
 >     error and give the message back for a retry.
+>   - *Contacts:* shared contacts can be saved as `.vcf` (*Save contact*, or *Download* / *Save as…*
+>     in the menu) or opened directly in your address book (*Add to contacts*). Contacts received
+>     before this version are saved with name and number only.
 >
 > Prebuilt Linux x86_64 binaries are on the [Releases](https://github.com/smatkovi/whats4linux/releases) page.
 

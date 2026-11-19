@@ -225,6 +225,9 @@ func NewMessageStore() (*MessageStore, error) {
 		if _, err = tx.Exec(query.CreateCallHistoryTable); err != nil {
 			return err
 		}
+		if _, err = tx.Exec(query.CreateContactCardsTable); err != nil {
+			return err
+		}
 		// Add poster-download key columns to pre-existing link_previews tables.
 		for _, mig := range []string{
 			query.AddLinkPreviewDirectPath, query.AddLinkPreviewMediaKey,
@@ -739,6 +742,8 @@ func (ms *MessageStore) InsertMessage(info *types.MessageInfo, msg *waE2E.Messag
 		pollSelectable = int(poll.GetSelectableOptionsCount())
 	}
 
+	contactCards := contactCardsFromMessage(msg)
+
 	return ms.runSync(func(tx *sql.Tx) error {
 		_, err := tx.Stmt(ms.stmtInsertMessage).Exec(
 			info.ID,
@@ -761,6 +766,10 @@ func (ms *MessageStore) InsertMessage(info *types.MessageInfo, msg *waE2E.Messag
 				lpDirectPath, lpMediaKey, lpFileSHA, lpFileEncSHA); perr != nil {
 				return perr
 			}
+		}
+		// Keep the raw vCards of shared contacts for "Save contact".
+		if err := insertContactCards(tx, info.ID, contactCards); err != nil {
+			return err
 		}
 		// Store structured poll data if this is a poll creation message.
 		if pollName != "" {

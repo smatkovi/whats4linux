@@ -334,3 +334,100 @@ func TestExistingDownloadIsReusedOnlyWhenHashMatches(t *testing.T) {
 		t.Fatalf("matching file not reused, got %q", got)
 	}
 }
+
+func insertTestMessage(t *testing.T, a *Api, id string, msg *waE2E.Message) {
+	t.Helper()
+	chat, _ := types.ParseJID("123@s.whatsapp.net")
+	info := types.MessageInfo{
+		ID:            id,
+		Timestamp:     time.Date(2026, 11, 19, 11, 0, 0, 0, time.Local),
+		MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+	}
+	if err := a.messageStore.InsertMessage(&info, msg, ""); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSaveContactCardWritesVCard(t *testing.T) {
+	a := newMediaTestAPI(t)
+	dl := t.TempDir()
+	t.Setenv("XDG_DOWNLOAD_DIR", dl)
+
+	vcard := "BEGIN:VCARD\nVERSION:3.0\nN:Muster;Anna;;;\nFN:Anna Muster\nTEL;type=CELL;waid=436601234567:+43 660 1234567\nEMAIL:anna@example.org\nEND:VCARD"
+	insertTestMessage(t, a, "contact-1", &waE2E.Message{ContactMessage: &waE2E.ContactMessage{
+		DisplayName: proto.String("Anna Muster"),
+		Vcard:       proto.String(vcard),
+	}})
+
+	path, err := a.SaveContactCard("123@s.whatsapp.net", "contact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(path) != "Anna Muster.vcf" {
+		t.Fatalf("name = %q", filepath.Base(path))
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != vcard+"\r\n" {
+		t.Fatalf("vcf content = %q", got)
+	}
+	// Saving twice keeps both files.
+	path2, err := a.SaveContactCard("123@s.whatsapp.net", "contact-1")
+	if err != nil || filepath.Base(path2) != "Anna Muster (1).vcf" {
+		t.Fatalf("second save = %q, %v", path2, err)
+	}
+}
+
+func TestSaveContactCardArray(t *testing.T) {
+	a := newMediaTestAPI(t)
+	t.Setenv("XDG_DOWNLOAD_DIR", t.TempDir())
+
+	insertTestMessage(t, a, "contacts-3", &waE2E.Message{ContactsArrayMessage: &waE2E.ContactsArrayMessage{
+		DisplayName: proto.String("3 contacts"),
+		Contacts: []*waE2E.ContactMessage{
+			{DisplayName: proto.String("Anna"), Vcard: proto.String("BEGIN:VCARD\nVERSION:3.0\nFN:Anna\nEND:VCARD")},
+			{DisplayName: proto.String("Ben"), Vcard: proto.String("BEGIN:VCARD\nVERSION:3.0\nFN:Ben\nEND:VCARD")},
+			{DisplayName: proto.String("Cleo"), Vcard: proto.String("BEGIN:VCARD\nVERSION:3.0\nFN:Cleo\nEND:VCARD")},
+		},
+	}})
+	path, err := a.SaveContactCard("123@s.whatsapp.net", "contacts-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(path) != "Anna and 2 more.vcf" {
+		t.Fatalf("name = %q", filepath.Base(path))
+	}
+	got, _ := os.ReadFile(path)
+	if n := strings.Count(string(got), "BEGIN:VCARD"); n != 3 {
+		t.Fatalf("expected 3 vCards, got %d: %q", n, got)
+	}
+}
+
+func TestSaveContactCardFallsBackForOldMessages(t *testing.T) {
+	a := newMediaTestAPI(t)
+	t.Setenv("XDG_DOWNLOAD_DIR", t.TempDir())
+
+	insertTestMessage(t, a, "old-contact", &waE2E.Message{ContactMessage: &waE2E.ContactMessage{
+		DisplayName: proto.String("Bob & Co; GmbH"),
+		Vcard:       proto.String("BEGIN:VCARD\nVERSION:3.0\nFN:Bob\nTEL:+49 151 2345678\nEND:VCARD"),
+	}})
+	// Simulate a row written before vCards were stored.
+	if err := a.messageStore.DeleteContactCardsForTest("old-contact"); err != nil {
+		t.Fatal(err)
+	}
+	path, err := a.SaveContactCard("123@s.whatsapp.net", "old-contact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	want := "BEGIN:VCARD\r\nVERSION:3.0\r\nN:Bob & Co\\; GmbH;;;;\r\nFN:Bob & Co\\; GmbH\r\nTEL;TYPE=CELL:+49 151 2345678\r\nEND:VCARD\r\n"
+	if string(got) != want {
+		t.Fatalf("rebuilt vCard =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestSaveContactCardRejectsOtherMessages(t *testing.T) {
+	a := newMediaTestAPI(t)
+	if _, err := a.SaveContactCard("123@s.whatsapp.net", "text-only"); err == nil {
+		t.Fatal("expected an error for a text message")
+	}
+}
