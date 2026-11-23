@@ -470,7 +470,7 @@ export function MessageItem({
     }
     // Note: senderKeyDistributionMessage and reactionMessage are not stored in messages.db
     // Reactions are stored separately and shown via the Reactions field
-    return <span className="italic opacity-50 text-xs">Unsupported Message Type</span>
+    return <span className="italic opacity-50 text-xs">This message can't be shown here</span>
   }
 
   const hasMedia = !!(content?.imageMessage || content?.videoMessage)

@@ -10,6 +10,10 @@
 > - **Start new chats.** The "New chat" button (and the chat search when nothing matches) opens a
 >   panel to pick a contact or type any phone number; the number is checked on WhatsApp and an empty
 >   chat opens right away.
+> - **Fewer "Unsupported Message Type" bubbles.** Album photos, group mentions, comments and newer
+>   poll versions are unwrapped and shown; HD/motion-photo copies, album headers, event RSVPs and
+>   other bookkeeping messages are no longer stored as empty bubbles; pin events show "📌 Pinned a
+>   message". Anything still unknown gets a small card naming its type (and a log line) instead.
 > - **Link with phone number.** Besides the QR code, the login screen can request an 8-character
 >   pairing code for your number. Enter it on the phone under *Linked devices → Link a device →
 >   Link with phone number instead*. Handy when the phone can't scan the screen.

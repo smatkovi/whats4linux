@@ -26,6 +26,14 @@ const (
 	SELECT display_name, vcard FROM contact_cards WHERE message_id = ? ORDER BY idx;
 	`
 
+	FillPinnedMessageText = `
+	UPDATE messages SET text = ? WHERE type = 1 AND (text IS NULL OR text = '');
+	`
+
+	SelectHasVisibleContent = `
+	SELECT 1 FROM messages WHERE message_id = ? AND ((text IS NOT NULL AND text <> '') OR has_media = 1);
+	`
+
 	SelectMessageTextByID = `
 	SELECT text, timestamp FROM messages WHERE message_id = ?;
 	`

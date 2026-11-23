@@ -80,6 +80,7 @@ const (
 		FROM messages
 		WHERE chat_jid = ?
 		  AND (timestamp < ? OR (timestamp = ? AND message_id < ?))
+		  AND NOT ((text IS NULL OR text = '') AND has_media = 0)
 		ORDER BY timestamp DESC, message_id DESC
 		LIMIT ?
 	) AS m 
@@ -99,6 +100,7 @@ const (
 		SELECT message_id, chat_jid, sender_jid, timestamp, is_from_me, text, reply_to_message_id, edited, forwarded
 		FROM messages
 		WHERE chat_jid = ?
+		  AND NOT ((text IS NULL OR text = '') AND has_media = 0)
 		ORDER BY timestamp DESC, message_id DESC
 		LIMIT ?
 	) AS m
@@ -135,6 +137,9 @@ const (
 				ORDER BY timestamp DESC
 			) AS rn
 		FROM messages
+		-- Rows without text or media (stored by older versions for message
+		-- types they couldn't read) have nothing to show.
+		WHERE NOT ((text IS NULL OR text = '') AND has_media = 0)
 	) AS m
 	LEFT JOIN message_media AS mm ON mm.message_id = m.message_id
 	WHERE rn = 1
@@ -154,6 +159,9 @@ const (
 				ORDER BY timestamp DESC
 			) AS rn
 		FROM messages
+		-- Rows without text or media (stored by older versions for message
+		-- types they couldn't read) have nothing to show.
+		WHERE NOT ((text IS NULL OR text = '') AND has_media = 0)
 	) AS m
 	LEFT JOIN message_media AS mm ON mm.message_id = m.message_id
 	WHERE rn = 1

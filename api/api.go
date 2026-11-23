@@ -486,6 +486,13 @@ func (a *Api) mainEventHandler(evt any) {
 	}
 	switch v := evt.(type) {
 	case *events.Message:
+		// Unwrap containers whatsmeow leaves in place (album children, group
+		// mentions, comments …) so text parsing, the poll-vote check and
+		// notifications all see the actual content.
+		v.Message = store.UnwrapMessage(v.Message)
+		if v.Message == nil {
+			return
+		}
 		// Poll votes (PollUpdateMessage) never create a visible chat row, but
 		// must be decrypted and stored so the poll card can show tallies.
 		if pollUpdate := v.Message.GetPollUpdateMessage(); pollUpdate != nil {
@@ -529,9 +536,7 @@ func (a *Api) mainEventHandler(evt any) {
 		// Respects the global notification switch and per-chat mutes
 		// (including mutes synced from the phone).
 		isFeed := v.Info.Chat.Server == types.NewsletterServer || v.Info.Chat.Server == types.BroadcastServer
-		isPoll := v.Message.GetPollCreationMessage() != nil ||
-			v.Message.GetPollCreationMessageV2() != nil ||
-			v.Message.GetPollCreationMessageV3() != nil
+		isPoll := store.IsPollCreation(v.Message)
 		if messageID != "" && !v.Info.IsFromMe && !isFeed && !isPoll && v.Message.GetReactionMessage() == nil && !a.windowFocused.Load() &&
 			store.GetNotificationsEnabled() && !a.messageStore.IsChatMuted(v.Info.Chat.String()) && !a.messageStore.IsChatArchived(v.Info.Chat.String()) {
 			a.startBackground(func() { a.notifyIncoming(v, parsedHTML) })

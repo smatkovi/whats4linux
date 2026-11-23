@@ -228,6 +228,11 @@ func NewMessageStore() (*MessageStore, error) {
 		if _, err = tx.Exec(query.CreateContactCardsTable); err != nil {
 			return err
 		}
+		// Pin events used to be stored without text and showed up as
+		// "Unsupported Message Type".
+		if _, err = tx.Exec(query.FillPinnedMessageText, PinnedMessageText); err != nil {
+			return err
+		}
 		// Add poster-download key columns to pre-existing link_previews tables.
 		for _, mig := range []string{
 			query.AddLinkPreviewDirectPath, query.AddLinkPreviewMediaKey,
@@ -379,8 +384,16 @@ func UnwrapMessage(m *waE2E.Message) *waE2E.Message {
 			m = m.GetDeviceSentMessage().GetMessage()
 		case m.GetDocumentWithCaptionMessage().GetMessage() != nil:
 			m = m.GetDocumentWithCaptionMessage().GetMessage()
+		case m.GetCommentMessage().GetMessage() != nil:
+			m = m.GetCommentMessage().GetMessage()
 		default:
-			return m
+			// Any other FutureProofMessage wrapper (album children,
+			// group mentions, poll v4, Lottie stickers, bot invokes …).
+			inner := unwrapFutureProof(m)
+			if inner == nil {
+				return m
+			}
+			m = inner
 		}
 	}
 	return m
@@ -724,6 +737,21 @@ func (ms *MessageStore) InsertMessage(info *types.MessageInfo, msg *waE2E.Messag
 		if special, ok := DescribeSpecialMessage(msg); ok {
 			text = special
 		}
+	}
+	// Never store a row without text or media: the UI can't show it.
+	fallbackText := false
+	if text == "" && emc == nil {
+		if messageType == mtypes.MessageTypeMessagePinned {
+			text = PinnedMessageText
+		} else {
+			text = unsupportedMessageCard(info.ID, msg)
+			fallbackText = true
+		}
+	}
+	// A message we can't display must not replace one we already stored with
+	// content (e.g. a re-delivered copy in a newer wrapper).
+	if fallbackText && ms.hasVisibleContent(info.ID) {
+		return nil
 	}
 
 	// Extract structured poll data from creation messages so the frontend

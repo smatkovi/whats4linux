@@ -26,7 +26,18 @@ func pollFromMessage(msg *waE2E.Message) *waE2E.PollCreationMessage {
 	if poll := msg.GetPollCreationMessageV2(); poll != nil {
 		return poll
 	}
-	return msg.GetPollCreationMessageV3()
+	if poll := msg.GetPollCreationMessageV3(); poll != nil {
+		return poll
+	}
+	if poll := msg.GetPollCreationMessageV5(); poll != nil {
+		return poll
+	}
+	return msg.GetPollCreationMessageV6()
+}
+
+// IsPollCreation reports whether msg creates a poll (any protocol version).
+func IsPollCreation(msg *waE2E.Message) bool {
+	return pollFromMessage(msg) != nil
 }
 
 func mapsLink(lat, lng float64, label string) string {
@@ -138,6 +149,22 @@ func DescribeSpecialMessage(msg *waE2E.Message) (string, bool) {
 		}
 		return out + `</div>`, true
 
+	case msg.GetPlaceholderMessage() != nil:
+		return `<i>🔒 This message is only shown on your phone</i>`, true
+
+	case msg.GetPollResultSnapshotMessage() != nil || msg.GetPollResultSnapshotMessageV3() != nil:
+		snap := msg.GetPollResultSnapshotMessage()
+		if snap == nil {
+			snap = msg.GetPollResultSnapshotMessageV3()
+		}
+		var b strings.Builder
+		b.WriteString(`<div class="msg-card msg-poll">📊 <b>` + esc(snap.GetName()) + `</b>`)
+		for _, v := range snap.GetPollVotes() {
+			b.WriteString(fmt.Sprintf(`<div class="poll-opt">%s · %d</div>`, esc(v.GetOptionName()), v.GetOptionVoteCount()))
+		}
+		b.WriteString(`<div class="msg-card-note">Poll results</div></div>`)
+		return b.String(), true
+
 	case msg.GetButtonsMessage() != nil && msg.GetButtonsMessage().GetContentText() != "":
 		return esc(msg.GetButtonsMessage().GetContentText()), true
 
@@ -199,5 +226,6 @@ func ShouldSkipMessage(msg *waE2E.Message) bool {
 	}
 	return msg.GetPollUpdateMessage() != nil ||
 		msg.GetKeepInChatMessage() != nil ||
-		msg.GetProtocolMessage() != nil
+		msg.GetProtocolMessage() != nil ||
+		isInvisibleMessage(msg)
 }
