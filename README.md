@@ -14,8 +14,9 @@
 >   poll versions are unwrapped and shown; HD/motion-photo copies, album headers, event RSVPs and
 >   other bookkeeping messages are no longer stored as empty bubbles; pin events show "📌 Pinned a
 >   message". Anything still unknown gets a small card naming its type (and a log line) instead.
-> - **Emoji everywhere.** A colour emoji font (Twemoji, CC-BY 4.0) is bundled, so reactions, emoji
->   in messages and the emoji picker no longer show up as empty boxes on systems without an emoji font.
+> - **Emoji everywhere.** A colour emoji font (Twemoji, CC-BY 4.0) is bundled, plus a small subset of
+>   Noto Color Emoji (OFL) for emoji newer than Twemoji (Unicode 15+, e.g. 🫨), so reactions, emoji in
+>   messages and the emoji picker no longer show up as empty boxes on systems without an emoji font.
 > - **Link with phone number.** Besides the QR code, the login screen can request an 8-character
 >   pairing code for your number. Enter it on the phone under *Linked devices → Link a device →
 >   Link with phone number instead*. Handy when the phone can't scan the screen.

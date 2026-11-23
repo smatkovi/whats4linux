@@ -160,11 +160,23 @@ label[for] {
     U+1F000-1FAFF, U+E0020-E007F;
 }
 
+/* Fallback for emoji newer than Twemoji Mozilla (Unicode 15+, e.g. 🫨 🩷):
+   a small subset of Noto Color Emoji with only those glyphs, see
+   assets/fonts/NOTO-EMOJI-LICENSE.md. Named like the font emoji-mart's
+   picker asks for, so the picker uses it too. */
+@font-face {
+  font-family: "Noto Color Emoji";
+  src: url("./assets/fonts/NotoColorEmoji-W4LFallback.ttf") format("truetype");
+  font-display: swap;
+  unicode-range: U+200D, U+20E3, U+FE0F, U+1F000-1FAFF, U+E0020-E007F;
+}
+
 body {
   background-color: #f0f2f5;
   color: #000000;
   font-family:
     "Twemoji Mozilla",
+    "Noto Color Emoji",
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
