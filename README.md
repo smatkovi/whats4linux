@@ -5,8 +5,11 @@
 
 > ## This fork
 >
-> This is a fork of [lugvitc/whats4linux](https://github.com/lugvitc/whats4linux) with two additions:
+> This is a fork of [lugvitc/whats4linux](https://github.com/lugvitc/whats4linux) with these additions:
 >
+> - **Start new chats.** The "New chat" button (and the chat search when nothing matches) opens a
+>   panel to pick a contact or type any phone number; the number is checked on WhatsApp and an empty
+>   chat opens right away.
 > - **Link with phone number.** Besides the QR code, the login screen can request an 8-character
 >   pairing code for your number. Enter it on the phone under *Linked devices → Link a device →
 >   Link with phone number instead*. Handy when the phone can't scan the screen.

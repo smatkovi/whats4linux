@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nyaruka/phonenumbers"
 	"go.mau.fi/whatsmeow"
@@ -58,15 +59,13 @@ func (a *Api) FetchContacts() ([]Contact, error) {
 	}
 	contacts := make([]Contact, 0, len(rawContacts))
 	for jid, c := range rawContacts {
-		rawNum := "+" + jid.User
-		// Parse phone number to use as International Format
-		num, err := phonenumbers.Parse(rawNum, "")
-		if err != nil && !phonenumbers.IsValidNumber(num) {
+		// The store also holds LID-keyed entries (group members etc.); their
+		// "number" is an opaque ID, not something to show or message.
+		if jid.Server != types.DefaultUserServer {
 			continue
 		}
-
 		contacts = append(contacts, Contact{
-			Phno:       phonenumbers.Format(num, phonenumbers.INTERNATIONAL),
+			Phno:       formatPhone(jid.User),
 			JID:        jid.String(),
 			FullName:   c.FullName,
 			Short:      c.FirstName,
@@ -75,4 +74,77 @@ func (a *Api) FetchContacts() ([]Contact, error) {
 		})
 	}
 	return contacts, nil
+}
+
+// formatPhone renders a JID user part as an international phone number,
+// falling back to "+digits" when libphonenumber can't parse it.
+func formatPhone(user string) string {
+	raw := "+" + user
+	num, err := phonenumbers.Parse(raw, "")
+	if err != nil {
+		return raw
+	}
+	return phonenumbers.Format(num, phonenumbers.INTERNATIONAL)
+}
+
+// internationalDigits turns user input like "+43 660 1234567" or
+// "0043 660 1234567" into bare international digits, rejecting national
+// numbers ("0660 …") that lack a country code.
+func internationalDigits(phone string) (string, error) {
+	trimmed := strings.TrimSpace(phone)
+	digits := normalizePairingPhone(trimmed)
+	international := strings.HasPrefix(trimmed, "+") || strings.HasPrefix(trimmed, "00")
+	if strings.HasPrefix(digits, "0") || (!international && len(digits) < 10) {
+		return "", fmt.Errorf("enter the number with country code, e.g. +43 660 1234567")
+	}
+	if len(digits) < 7 || len(digits) > 15 {
+		return "", fmt.Errorf("%q is not a valid phone number", trimmed)
+	}
+	return digits, nil
+}
+
+// ResolvePhoneChat checks that a phone number is on WhatsApp and returns the
+// contact to start a chat with (phone-number JID plus the best known name).
+func (a *Api) ResolvePhoneChat(phone string) (Contact, error) {
+	if a.waClient == nil || a.waClient.Store == nil || a.waClient.Store.ID == nil {
+		return Contact{}, fmt.Errorf("not logged in")
+	}
+	digits, err := internationalDigits(phone)
+	if err != nil {
+		return Contact{}, err
+	}
+
+	resp, err := a.waClient.IsOnWhatsApp(a.ctx, []string{"+" + digits})
+	if err != nil {
+		return Contact{}, fmt.Errorf("could not check the number: %w", err)
+	}
+	if len(resp) == 0 || !resp[0].IsIn {
+		return Contact{}, fmt.Errorf("%s is not on WhatsApp", formatPhone(digits))
+	}
+
+	// The app keys one-to-one chats by phone-number JID; the response's main
+	// JID is often the LID.
+	jid := resp[0].PhoneNumber
+	if jid.IsEmpty() || jid.Server != types.DefaultUserServer {
+		jid = resp[0].JID
+	}
+	if jid.IsEmpty() || jid.Server != types.DefaultUserServer {
+		jid = types.NewJID(digits, types.DefaultUserServer)
+	}
+	jid = jid.ToNonAD()
+
+	c := Contact{JID: jid.String(), Phno: formatPhone(jid.User)}
+	if info, err := a.waClient.Store.Contacts.GetContact(a.ctx, jid); err == nil && info.Found {
+		c.FullName = info.FullName
+		c.Short = info.FirstName
+		c.PushName = info.PushName
+		c.IsBusiness = info.BusinessName != ""
+	}
+	if vn := resp[0].VerifiedName; vn != nil && vn.Details != nil {
+		c.IsBusiness = true
+		if c.FullName == "" {
+			c.FullName = vn.Details.GetVerifiedName()
+		}
+	}
+	return c, nil
 }

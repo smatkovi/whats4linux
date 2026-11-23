@@ -431,3 +431,29 @@ func TestSaveContactCardRejectsOtherMessages(t *testing.T) {
 		t.Fatal("expected an error for a text message")
 	}
 }
+
+func TestInternationalDigits(t *testing.T) {
+	ok := map[string]string{
+		"+43 660 1234567":   "436601234567",
+		"0043 660 1234567":  "436601234567",
+		"+49 (151) 2345678": "491512345678",
+		"436601234567":      "436601234567",
+	}
+	for in, want := range ok {
+		got, err := internationalDigits(in)
+		if err != nil || got != want {
+			t.Errorf("internationalDigits(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"0660 1234567", "6601234", "+43 12", "+1234567890123456", ""} {
+		if got, err := internationalDigits(in); err == nil {
+			t.Errorf("internationalDigits(%q) = %q, want an error", in, got)
+		}
+	}
+}
+
+func TestResolvePhoneChatNeedsLogin(t *testing.T) {
+	if _, err := (&Api{}).ResolvePhoneChat("+43 660 1234567"); err == nil {
+		t.Fatal("expected an error without a client")
+	}
+}
