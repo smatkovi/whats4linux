@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lugvitc/whats4linux/internal/wa"
 	"github.com/nyaruka/phonenumbers"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -104,6 +105,7 @@ func (a *Api) PairWithPhone(phoneNumber string) (string, error) {
 		}
 	})
 	defer a.waClient.RemoveEventHandler(handlerID)
+	wa.EnsureCurrentVersion(a.ctx, false)
 	if err := a.waClient.Connect(); err != nil {
 		return "", fmt.Errorf("failed to connect: %w", err)
 	}

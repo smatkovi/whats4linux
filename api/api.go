@@ -376,6 +376,7 @@ func (a *Api) Login() error {
 		if a.isShuttingDown() {
 			return context.Canceled
 		}
+		wa.EnsureCurrentVersion(loginCtx, false)
 		err = client.Connect()
 		if err != nil {
 			return err
@@ -397,6 +398,7 @@ func (a *Api) Login() error {
 		}
 	} else {
 		// Already logged in, connect before announcing readiness.
+		wa.EnsureCurrentVersion(a.ctx, false)
 		err := client.Connect()
 		if err != nil {
 			return err
@@ -407,6 +409,35 @@ func (a *Api) Login() error {
 		runtime.EventsEmit(a.ctx, "wa:status", "logged_in")
 	}
 	return nil
+}
+
+// reconnectWithCurrentVersion logs in again after WhatsApp rejected the client
+// version (405), using the current WhatsApp Web version. It only reconnects
+// when that version is newer than the rejected one, so a lasting 405 can't
+// loop. Unpaired clients are left to the login screen, whose QR reload calls
+// Login (and the version check) again.
+func (a *Api) reconnectWithCurrentVersion() {
+	client := a.waClient
+	if client == nil || client.Store.ID == nil {
+		return
+	}
+	if !wa.EnsureCurrentVersion(a.ctx, true) {
+		log.Println("WhatsApp rejected the client version and no newer version is available")
+		return
+	}
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	if a.isShuttingDown() {
+		return
+	}
+	// The server closes the socket after the 405, but make sure it's down
+	// before connecting again (Connect fails on a live socket).
+	client.Disconnect()
+	if err := client.Connect(); err != nil {
+		log.Println("reconnect with the current WhatsApp Web version failed:", err)
+		return
+	}
+	log.Println("reconnected after a client-outdated rejection")
 }
 
 // keeping these comments cuz janky implementation, if you figure out a better implementation, pls fix
@@ -581,6 +612,12 @@ func (a *Api) mainEventHandler(evt any) {
 		// during app-state full sync. Persist so notifications stay quiet.
 		muted := v.Action.GetMuted()
 		a.handleMuteEvent(v.JID, muted, v.Action.GetMuteEndTimestamp())
+
+	case *events.ClientOutdated:
+		// WhatsApp rejected the client version (405) and closed the socket
+		// without auto-reconnect; sending then fails with "websocket not
+		// connected". Fetch the current version and log in again with it.
+		a.startBackground(a.reconnectWithCurrentVersion)
 
 	case *events.PairSuccess:
 		// Pairing by phone number can finish after the QR channel from Login()
